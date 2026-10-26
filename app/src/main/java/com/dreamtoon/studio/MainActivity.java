@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
   button(root,"Set Trim Start at Current Frame",()->{if(selected==null)return;startMs=video.getCurrentPosition();showTrim();});
   button(root,"Set Trim End at Current Frame",()->{if(selected==null)return;endMs=video.getCurrentPosition();showTrim();});
   button(root,"Export Trimmed MP4",this::export);
+  button(root,"Export 9:16 Reel + Permanent Caption",this::exportReel);
   button(root,"Share Last Export",this::shareLastExport);
   button(root,"Save Caption as SRT",this::saveSubtitle);
   button(root,"Choose Background Music",()->{
@@ -93,7 +94,7 @@ public class MainActivity extends Activity {
   button(root,"Start Voice Recording",this::startVoiceRecording);
   button(root,"Stop Voice Recording",this::stopVoiceRecording);
   TextView note=new TextView(this);
-  note.setText("Caption preview is NOT included in exported MP4. Music preview does not mix audio into exported video; 9:16 conversion is not yet available.");
+  note.setText("Use Export 9:16 Reel for permanent caption. Music/voice mixing into the video is not yet available.");
   root.addView(note);
   setContentView(scroll);
   tts=new TextToSpeech(this,code->runOnUiThread(()->{
@@ -108,6 +109,50 @@ public class MainActivity extends Activity {
   progressHandler.post(progressTask);
  }
  private void showTrim(){info.setText("Trim "+(startMs/1000.0)+"s to "+(endMs/1000.0)+"s");}
+ private void exportReel(){
+  if(selected==null){info.setText("Import a video first");return;}
+  if(endMs<=startMs){info.setText("Choose a valid trim range");return;}
+  File folder=getExternalFilesDir(Environment.DIRECTORY_MOVIES);
+  if(folder==null){info.setText("Movies directory unavailable");return;}
+  if(!folder.exists()&&!folder.mkdirs()){info.setText("Cannot create output folder");return;}
+  File out=new File(folder,"Dreamtoon_Reel_"+System.currentTimeMillis()+".mp4");
+  info.setText("Rendering vertical Reel... please wait");
+  try{
+   ReelsExporter.export(this,selected,out,startMs,endMs,
+      captionInput.getText().toString(),new ReelsExporter.Callback(){
+       @Override public void onSuccess(File output){
+        new Thread(()->{
+         try{
+          ContentValues values=new ContentValues();
+          values.put(MediaStore.Video.Media.DISPLAY_NAME,output.getName());
+          values.put(MediaStore.Video.Media.MIME_TYPE,"video/mp4");
+          values.put(MediaStore.Video.Media.RELATIVE_PATH,Environment.DIRECTORY_MOVIES+"/Dreamtoon Studio");
+          values.put(MediaStore.Video.Media.IS_PENDING,1);
+          Uri gallery=getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,values);
+          if(gallery==null)throw new IllegalStateException("Gallery unavailable");
+          try{
+           try(FileInputStream inputStream=new FileInputStream(output);
+               OutputStream stream=getContentResolver().openOutputStream(gallery)){
+            if(stream==null)throw new IllegalStateException("Cannot write Gallery");
+            byte[] data=new byte[65536];int n;
+            while((n=inputStream.read(data))!=-1)stream.write(data,0,n);
+           }
+           ContentValues done=new ContentValues();
+           done.put(MediaStore.Video.Media.IS_PENDING,0);
+           getContentResolver().update(gallery,done,null,null);
+          }catch(Exception e){getContentResolver().delete(gallery,null,null);throw e;}
+          output.delete();
+          runOnUiThread(()->{lastExport=gallery;info.setText("9:16 Reel saved to Gallery");});
+         }catch(Exception e){runOnUiThread(()->info.setText("Gallery save failed: "+e.getMessage()));}
+        }).start();
+       }
+       @Override public void onFailure(Exception error){
+        out.delete();
+        runOnUiThread(()->info.setText("Reel render failed: "+error.getMessage()));
+       }
+      });
+  }catch(Exception e){out.delete();info.setText("Cannot start Reel export: "+e.getMessage());}
+ }
  private void export(){
   if(selected==null){info.setText("Import a video first");return;}
   if(endMs<=startMs){info.setText("Trim end must be after start");return;}

@@ -3,6 +3,7 @@ import android.app.Activity;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
+import android.media.MediaPlayer;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.os.Bundle;
@@ -35,6 +36,8 @@ public class MainActivity extends Activity {
  private TextView captionPreview;
  private EditText captionInput;
  private Uri lastExport;
+ private Uri musicUri;
+ private MediaPlayer musicPlayer;
  private TextToSpeech tts;
  private boolean ttsReady=false;
  private EditText voiceScript;
@@ -75,6 +78,12 @@ public class MainActivity extends Activity {
   button(root,"Export Trimmed MP4",this::export);
   button(root,"Share Last Export",this::shareLastExport);
   button(root,"Save Caption as SRT",this::saveSubtitle);
+  button(root,"Choose Background Music",()->{
+   Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+   i.setType("audio/*");i.addCategory(Intent.CATEGORY_OPENABLE);
+   startActivityForResult(i,2);
+  });
+  button(root,"Play / Stop Music Preview",this::toggleMusicPreview);
   voiceScript=new EditText(this);
   voiceScript.setHint("AI Voice: বাংলা বা English লিখুন");
   voiceScript.setMinLines(2);
@@ -84,7 +93,7 @@ public class MainActivity extends Activity {
   button(root,"Start Voice Recording",this::startVoiceRecording);
   button(root,"Stop Voice Recording",this::stopVoiceRecording);
   TextView note=new TextView(this);
-  note.setText("Caption preview is NOT included in exported MP4. Audio mixing and 9:16 conversion are not yet available.");
+  note.setText("Caption preview is NOT included in exported MP4. Music preview does not mix audio into exported video; 9:16 conversion is not yet available.");
   root.addView(note);
   setContentView(scroll);
   tts=new TextToSpeech(this,code->runOnUiThread(()->{
@@ -197,6 +206,21 @@ public class MainActivity extends Activity {
   if(result!=TextToSpeech.SUCCESS)info.setText("Unable to start AI voice generation");
   else info.setText("Generating AI voice...");
  }
+ private void toggleMusicPreview(){
+  if(musicPlayer!=null){musicPlayer.release();musicPlayer=null;info.setText("Music preview stopped");return;}
+  if(musicUri==null){info.setText("Choose an audio file first");return;}
+  try{
+   musicPlayer=new MediaPlayer();
+   musicPlayer.setDataSource(this,musicUri);
+   musicPlayer.setOnCompletionListener(mp->{mp.release();musicPlayer=null;});
+   musicPlayer.prepare();
+   musicPlayer.start();
+   info.setText("Playing selected music (preview only)");
+  }catch(Exception e){
+   if(musicPlayer!=null){musicPlayer.release();musicPlayer=null;}
+   info.setText("Cannot play music: "+e.getMessage());
+  }
+ }
  private void startVoiceRecording(){
   if(recorder!=null){info.setText("Recording already active");return;}
   if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
@@ -235,6 +259,7 @@ public class MainActivity extends Activity {
  @Override protected void onDestroy(){
   if(recorder!=null){try{recorder.stop();}catch(Exception ignored){}recorder.release();recorder=null;}
   progressHandler.removeCallbacks(progressTask);
+  if(musicPlayer!=null){musicPlayer.release();musicPlayer=null;}
   if(tts!=null){tts.stop();tts.shutdown();tts=null;}
   super.onDestroy();
  }
@@ -248,6 +273,11 @@ public class MainActivity extends Activity {
  }
  @Override protected void onActivityResult(int req,int result,Intent data){
   super.onActivityResult(req,result,data);
+  if(req==2&&result==RESULT_OK&&data!=null){
+   if(musicPlayer!=null){musicPlayer.release();musicPlayer=null;}
+   musicUri=data.getData();
+   info.setText("Music selected. Tap Play / Stop Music Preview.");
+  }
   if(req==1&&result==RESULT_OK&&data!=null){
    selected=data.getData();
    lastExport=null;

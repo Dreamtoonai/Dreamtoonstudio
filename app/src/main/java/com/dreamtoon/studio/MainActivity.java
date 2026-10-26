@@ -43,10 +43,11 @@ public class MainActivity extends Activity {
  @Override public void onCreate(Bundle b){
   super.onCreate(b);
   LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(20,30,20,20);
+  ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(root);
   TextView title=new TextView(this);title.setText("Dreamtoon Studio");title.setTextSize(26);root.addView(title);
   info=new TextView(this);info.setText("Choose an MP4 video to begin");root.addView(info);
   FrameLayout stage=new FrameLayout(this);
-  root.addView(stage,new LinearLayout.LayoutParams(-1,0,1));
+  root.addView(stage,new LinearLayout.LayoutParams(-1,600));
   video=new VideoView(this);stage.addView(video,new FrameLayout.LayoutParams(-1,-1));
   captionPreview=new TextView(this);
   captionPreview.setTextColor(Color.WHITE);
@@ -80,7 +81,7 @@ public class MainActivity extends Activity {
   TextView note=new TextView(this);
   note.setText("Caption preview is NOT included in exported MP4. Audio mixing and 9:16 conversion are not yet available.");
   root.addView(note);
-  setContentView(root);
+  setContentView(scroll);
   tts=new TextToSpeech(this,code->runOnUiThread(()->{
    ttsReady=code==TextToSpeech.SUCCESS;
    if(!ttsReady)info.setText("Text-to-Speech initialization failed");
@@ -146,7 +147,7 @@ public class MainActivity extends Activity {
   try{
    uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
    if(uri==null)throw new IllegalStateException("Cannot create subtitle file");
-   String srt="1\\n"+srtTime(0)+" --> "+srtTime(endMs-startMs)+"\\n"+words+"\\n";
+   String srt="1\n"+srtTime(0)+" --> "+srtTime(endMs-startMs)+"\n"+words+"\n";
    try(OutputStream stream=getContentResolver().openOutputStream(uri)){
     if(stream==null)throw new IllegalStateException("Cannot open subtitle file");
     stream.write(srt.getBytes(StandardCharsets.UTF_8));
@@ -164,7 +165,7 @@ public class MainActivity extends Activity {
   if(!ttsReady||tts==null){info.setText("Text-to-Speech is not ready");return false;}
   String words=voiceScript.getText().toString().trim();
   if(words.isEmpty()){info.setText("Write AI voice text first");return false;}
-  java.util.Locale locale=words.matches("(?s).*?[\\\\u0980-\\\\u09FF].*")?new java.util.Locale("bn","BD"):java.util.Locale.ENGLISH;
+  java.util.Locale locale=words.matches("(?s).*[\u0980-\u09FF].*")?new java.util.Locale("bn","BD"):java.util.Locale.ENGLISH;
   int result=tts.setLanguage(locale);
   if(result==TextToSpeech.LANG_MISSING_DATA||result==TextToSpeech.LANG_NOT_SUPPORTED){
    info.setText("This phone has no voice installed for "+locale.getDisplayLanguage());return false;

@@ -3,6 +3,8 @@ import android.app.Activity;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.os.Bundle;
 import android.os.Environment;
 import android.content.Intent;
@@ -28,6 +30,9 @@ public class MainActivity extends Activity {
  private TextView captionPreview;
  private EditText captionInput;
  private Uri lastExport;
+ private TextToSpeech tts;
+ private boolean ttsReady=false;
+ private EditText voiceScript;
  private MediaRecorder recorder;
  private File recordedVoice;
  private long startMs=0,endMs=0;
@@ -64,12 +69,22 @@ public class MainActivity extends Activity {
   button(root,"Export Trimmed MP4",this::export);
   button(root,"Share Last Export",this::shareLastExport);
   button(root,"Save Caption as SRT",this::saveSubtitle);
+  voiceScript=new EditText(this);
+  voiceScript.setHint("AI Voice: বাংলা বা English লিখুন");
+  voiceScript.setMinLines(2);
+  root.addView(voiceScript);
+  button(root,"Speak AI Voice Preview",this::speakVoice);
+  button(root,"Save AI Voice WAV",this::saveAiVoice);
   button(root,"Start Voice Recording",this::startVoiceRecording);
   button(root,"Stop Voice Recording",this::stopVoiceRecording);
   TextView note=new TextView(this);
   note.setText("Caption preview is NOT included in exported MP4. Audio mixing and 9:16 conversion are not yet available.");
   root.addView(note);
   setContentView(root);
+  tts=new TextToSpeech(this,code->runOnUiThread(()->{
+   ttsReady=code==TextToSpeech.SUCCESS;
+   if(!ttsReady)info.setText("Text-to-Speech initialization failed");
+  }));
   seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
    public void onProgressChanged(SeekBar s,int p,boolean user){if(user&&selected!=null)video.seekTo(p);}
    public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}
@@ -145,6 +160,36 @@ public class MainActivity extends Activity {
    info.setText("Subtitle save failed: "+e.getMessage());
   }
  }
+ private boolean configureVoice(){
+  if(!ttsReady||tts==null){info.setText("Text-to-Speech is not ready");return false;}
+  String words=voiceScript.getText().toString().trim();
+  if(words.isEmpty()){info.setText("Write AI voice text first");return false;}
+  java.util.Locale locale=words.matches("(?s).*?[\\\\u0980-\\\\u09FF].*")?new java.util.Locale("bn","BD"):java.util.Locale.ENGLISH;
+  int result=tts.setLanguage(locale);
+  if(result==TextToSpeech.LANG_MISSING_DATA||result==TextToSpeech.LANG_NOT_SUPPORTED){
+   info.setText("This phone has no voice installed for "+locale.getDisplayLanguage());return false;
+  }
+  return true;
+ }
+ private void speakVoice(){
+  if(!configureVoice())return;
+  tts.speak(voiceScript.getText().toString(),TextToSpeech.QUEUE_FLUSH,null,"dreamtoon-preview");
+ }
+ private void saveAiVoice(){
+  if(!configureVoice())return;
+  File folder=getExternalFilesDir(Environment.DIRECTORY_MUSIC);
+  if(folder==null){info.setText("Audio folder unavailable");return;}
+  if(!folder.exists()&&!folder.mkdirs()){info.setText("Cannot create audio folder");return;}
+  File out=new File(folder,"Dreamtoon_AI_"+System.currentTimeMillis()+".wav");
+  tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
+   @Override public void onStart(String id){}
+   @Override public void onDone(String id){runOnUiThread(()->info.setText("AI voice saved: "+out.getAbsolutePath()));}
+   @Override public void onError(String id){runOnUiThread(()->info.setText("AI voice generation failed"));}
+  });
+  int result=tts.synthesizeToFile(voiceScript.getText().toString(),null,out,"dreamtoon-save");
+  if(result!=TextToSpeech.SUCCESS)info.setText("Unable to start AI voice generation");
+  else info.setText("Generating AI voice...");
+ }
  private void startVoiceRecording(){
   if(recorder!=null){info.setText("Recording already active");return;}
   if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
@@ -182,6 +227,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onDestroy(){
   if(recorder!=null){try{recorder.stop();}catch(Exception ignored){}recorder.release();recorder=null;}
+  if(tts!=null){tts.stop();tts.shutdown();tts=null;}
   super.onDestroy();
  }
  private void shareLastExport(){

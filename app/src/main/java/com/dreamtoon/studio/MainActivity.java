@@ -4,6 +4,10 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.content.Intent;
 import android.net.Uri;
+import android.content.ContentValues;
+import android.provider.MediaStore;
+import java.io.FileInputStream;
+import java.io.OutputStream;
 import android.widget.*;
 import java.io.File;
 
@@ -53,7 +57,26 @@ public class MainActivity extends Activity {
     File output=new File(folder,"Dreamtoon_"+System.currentTimeMillis()+".mp4");
     try{VideoEngine.trim(this,input,output,from,to);}
     catch(Exception e){output.delete();throw e;}
-    runOnUiThread(()->info.setText("Saved: "+output.getAbsolutePath()));
+    ContentValues values=new ContentValues();
+    values.put(MediaStore.Video.Media.DISPLAY_NAME,output.getName());
+    values.put(MediaStore.Video.Media.MIME_TYPE,"video/mp4");
+    values.put(MediaStore.Video.Media.RELATIVE_PATH,Environment.DIRECTORY_MOVIES+"/Dreamtoon Studio");
+    values.put(MediaStore.Video.Media.IS_PENDING,1);
+    Uri gallery=getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,values);
+    if(gallery==null)throw new IllegalStateException("Gallery save unavailable");
+    try{
+     try(FileInputStream inputStream=new FileInputStream(output);
+         OutputStream outputStream=getContentResolver().openOutputStream(gallery)){
+      if(outputStream==null)throw new IllegalStateException("Cannot open Gallery file");
+      byte[] chunk=new byte[65536];int count;
+      while((count=inputStream.read(chunk))!=-1)outputStream.write(chunk,0,count);
+     }
+     ContentValues done=new ContentValues();
+     done.put(MediaStore.Video.Media.IS_PENDING,0);
+     getContentResolver().update(gallery,done,null,null);
+    }catch(Exception error){getContentResolver().delete(gallery,null,null);throw error;}
+    output.delete();
+    runOnUiThread(()->info.setText("Video saved to Gallery: "+gallery));
    }catch(Exception ex){runOnUiThread(()->info.setText("Export failed: "+ex.getMessage()));}
   }).start();
  }

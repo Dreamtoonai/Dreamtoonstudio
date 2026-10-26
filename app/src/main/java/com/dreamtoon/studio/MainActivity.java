@@ -6,6 +6,8 @@ import android.media.MediaRecorder;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Environment;
 import android.content.Intent;
 import android.net.Uri;
@@ -24,6 +26,9 @@ import java.io.File;
 
 public class MainActivity extends Activity {
  private VideoView video;
+ private final Handler progressHandler=new Handler(Looper.getMainLooper());
+ private final Runnable progressTask=new Runnable(){public void run(){if(video!=null&&seek!=null&&selected!=null&&!seekDragging){seek.setProgress(video.getCurrentPosition());}progressHandler.postDelayed(this,250);}};
+ private boolean seekDragging=false;
  private TextView info;
  private Uri selected;
  private SeekBar seek;
@@ -88,9 +93,10 @@ public class MainActivity extends Activity {
   }));
   seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
    public void onProgressChanged(SeekBar s,int p,boolean user){if(user&&selected!=null)video.seekTo(p);}
-   public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}
+   public void onStartTrackingTouch(SeekBar s){seekDragging=true;}public void onStopTrackingTouch(SeekBar s){seekDragging=false;}
   });
-  video.setOnPreparedListener(mp->{seek.setMax(video.getDuration());endMs=video.getDuration();showTrim();});
+  video.setOnPreparedListener(mp->{seek.setMax(video.getDuration());startMs=0;endMs=video.getDuration();showTrim();});
+  progressHandler.post(progressTask);
  }
  private void showTrim(){info.setText("Trim "+(startMs/1000.0)+"s to "+(endMs/1000.0)+"s");}
  private void export(){
@@ -228,6 +234,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onDestroy(){
   if(recorder!=null){try{recorder.stop();}catch(Exception ignored){}recorder.release();recorder=null;}
+  progressHandler.removeCallbacks(progressTask);
   if(tts!=null){tts.stop();tts.shutdown();tts=null;}
   super.onDestroy();
  }
@@ -243,6 +250,8 @@ public class MainActivity extends Activity {
   super.onActivityResult(req,result,data);
   if(req==1&&result==RESULT_OK&&data!=null){
    selected=data.getData();
+   lastExport=null;
+   startMs=0;endMs=0;seek.setProgress(0);
    video.setVideoURI(selected);video.start();
   }
  }

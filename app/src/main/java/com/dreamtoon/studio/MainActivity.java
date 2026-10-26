@@ -8,6 +8,8 @@ import android.content.ContentValues;
 import android.provider.MediaStore;
 import java.io.FileInputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import android.widget.*;
 import android.graphics.Color;
 import android.view.Gravity;
@@ -56,6 +58,7 @@ public class MainActivity extends Activity {
   button(root,"Set Trim End at Current Frame",()->{if(selected==null)return;endMs=video.getCurrentPosition();showTrim();});
   button(root,"Export Trimmed MP4",this::export);
   button(root,"Share Last Export",this::shareLastExport);
+  button(root,"Save Caption as SRT",this::saveSubtitle);
   TextView note=new TextView(this);
   note.setText("Caption preview is NOT included in exported MP4. Audio mixing and 9:16 conversion are not yet available.");
   root.addView(note);
@@ -102,6 +105,38 @@ public class MainActivity extends Activity {
     runOnUiThread(()->{lastExport=gallery;info.setText("Video saved to Gallery: "+gallery);});
    }catch(Exception ex){runOnUiThread(()->info.setText("Export failed: "+ex.getMessage()));}
   }).start();
+ }
+ private String srtTime(long ms){
+  long t=Math.max(0,ms);
+  return String.format(Locale.US,"%02d:%02d:%02d,%03d",t/3600000,(t/60000)%60,(t/1000)%60,t%1000);
+ }
+ private void saveSubtitle(){
+  if(selected==null){info.setText("Import a video first");return;}
+  if(endMs<=startMs){info.setText("Set a valid trim range");return;}
+  String words=captionInput.getText().toString().trim();
+  if(words.isEmpty()){info.setText("Enter a caption first");return;}
+  ContentValues values=new ContentValues();
+  values.put(MediaStore.Downloads.DISPLAY_NAME,"Dreamtoon_Caption_"+System.currentTimeMillis()+".srt");
+  values.put(MediaStore.Downloads.MIME_TYPE,"application/x-subrip");
+  values.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/Dreamtoon Studio");
+  values.put(MediaStore.Downloads.IS_PENDING,1);
+  Uri uri=null;
+  try{
+   uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+   if(uri==null)throw new IllegalStateException("Cannot create subtitle file");
+   String srt="1\\n"+srtTime(0)+" --> "+srtTime(endMs-startMs)+"\\n"+words+"\\n";
+   try(OutputStream stream=getContentResolver().openOutputStream(uri)){
+    if(stream==null)throw new IllegalStateException("Cannot open subtitle file");
+    stream.write(srt.getBytes(StandardCharsets.UTF_8));
+   }
+   ContentValues done=new ContentValues();
+   done.put(MediaStore.Downloads.IS_PENDING,0);
+   getContentResolver().update(uri,done,null,null);
+   info.setText("SRT saved to Downloads/Dreamtoon Studio");
+  }catch(Exception e){
+   if(uri!=null)getContentResolver().delete(uri,null,null);
+   info.setText("Subtitle save failed: "+e.getMessage());
+  }
  }
  private void shareLastExport(){
   if(lastExport==null){info.setText("Export a video before sharing");return;}

@@ -1,5 +1,8 @@
 package com.dreamtoon.studio;
 import android.app.Activity;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Environment;
 import android.content.Intent;
@@ -25,6 +28,8 @@ public class MainActivity extends Activity {
  private TextView captionPreview;
  private EditText captionInput;
  private Uri lastExport;
+ private MediaRecorder recorder;
+ private File recordedVoice;
  private long startMs=0,endMs=0;
  private void button(LinearLayout parent,String title,Runnable action){
   Button b=new Button(this);b.setText(title);parent.addView(b);
@@ -59,6 +64,8 @@ public class MainActivity extends Activity {
   button(root,"Export Trimmed MP4",this::export);
   button(root,"Share Last Export",this::shareLastExport);
   button(root,"Save Caption as SRT",this::saveSubtitle);
+  button(root,"Start Voice Recording",this::startVoiceRecording);
+  button(root,"Stop Voice Recording",this::stopVoiceRecording);
   TextView note=new TextView(this);
   note.setText("Caption preview is NOT included in exported MP4. Audio mixing and 9:16 conversion are not yet available.");
   root.addView(note);
@@ -137,6 +144,45 @@ public class MainActivity extends Activity {
    if(uri!=null)getContentResolver().delete(uri,null,null);
    info.setText("Subtitle save failed: "+e.getMessage());
   }
+ }
+ private void startVoiceRecording(){
+  if(recorder!=null){info.setText("Recording already active");return;}
+  if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+   requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},42);
+   info.setText("Microphone permission needed. Tap Start again after allowing.");
+   return;
+  }
+  try{
+   File folder=getExternalFilesDir(Environment.DIRECTORY_MUSIC);
+   if(folder==null)throw new IllegalStateException("Music folder unavailable");
+   if(!folder.exists()&&!folder.mkdirs())throw new IllegalStateException("Cannot create voice folder");
+   recordedVoice=new File(folder,"Dreamtoon_Voice_"+System.currentTimeMillis()+".m4a");
+   MediaRecorder next=new MediaRecorder();
+   next.setAudioSource(MediaRecorder.AudioSource.MIC);
+   next.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+   next.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+   next.setAudioEncodingBitRate(128000);
+   next.setAudioSamplingRate(44100);
+   next.setOutputFile(recordedVoice.getAbsolutePath());
+   next.prepare();next.start();recorder=next;
+   info.setText("Recording voice... Tap Stop when finished.");
+  }catch(Exception ex){
+   if(recorder!=null){recorder.release();recorder=null;}
+   if(recordedVoice!=null)recordedVoice.delete();
+   info.setText("Recording failed: "+ex.getMessage());
+  }
+ }
+ private void stopVoiceRecording(){
+  if(recorder==null){info.setText("Start recording first");return;}
+  boolean success=false;
+  try{recorder.stop();success=true;}catch(Exception ex){info.setText("Recording too short or failed");}
+  finally{recorder.release();recorder=null;}
+  if(success)info.setText("Voice saved: "+recordedVoice.getAbsolutePath()+" (not mixed into video yet)");
+  else if(recordedVoice!=null)recordedVoice.delete();
+ }
+ @Override protected void onDestroy(){
+  if(recorder!=null){try{recorder.stop();}catch(Exception ignored){}recorder.release();recorder=null;}
+  super.onDestroy();
  }
  private void shareLastExport(){
   if(lastExport==null){info.setText("Export a video before sharing");return;}
